@@ -30,20 +30,22 @@ import java.util.List;
 import java.util.Map;
 import java.util.ResourceBundle;
 
-import module.finance.domain.SupplierContact;
-import module.finance.util.Address;
-import module.workflow.activities.ActivityInformation;
-import module.workflow.activities.WorkflowActivity;
-import net.sf.jasperreports.engine.JRException;
-
+import org.fenixedu.bennu.WorkflowConfiguration;
 import org.fenixedu.bennu.core.domain.User;
 import org.fenixedu.bennu.core.i18n.BundleUtil;
 import org.fenixedu.bennu.core.security.Authenticate;
 import org.fenixedu.commons.i18n.I18N;
 
+import module.finance.domain.SupplierContact;
+import module.finance.util.Address;
+import module.workflow.activities.ActivityInformation;
+import module.workflow.activities.WorkflowActivity;
+import module.workflow.domain.SigningState;
+import net.sf.jasperreports.engine.JRException;
 import pt.ist.expenditureTrackingSystem._development.Bundle;
 import pt.ist.expenditureTrackingSystem._development.ExpenditureConfiguration;
 import pt.ist.expenditureTrackingSystem.domain.ExpenditureTrackingSystem;
+import pt.ist.expenditureTrackingSystem.domain.acquisitions.AcquisitionProcess;
 import pt.ist.expenditureTrackingSystem.domain.acquisitions.AcquisitionRequest;
 import pt.ist.expenditureTrackingSystem.domain.acquisitions.AcquisitionRequestItem;
 import pt.ist.expenditureTrackingSystem.domain.acquisitions.PurchaseOrderDocument;
@@ -56,10 +58,11 @@ import pt.ist.expenditureTrackingSystem.util.ReportUtils;
  * @author Pedro Santos
  * @author Paulo Abrantes
  * @author Luis Cruz
+ * @author Ricardo Almeida
  * 
  */
-public class CreateAcquisitionPurchaseOrderDocument extends
-        WorkflowActivity<RegularAcquisitionProcess, CreateAcquisitionPurchaseOrderDocumentInformation> {
+public class CreateAcquisitionPurchaseOrderDocument
+        extends WorkflowActivity<RegularAcquisitionProcess, CreateAcquisitionPurchaseOrderDocumentInformation> {
 
     private static final String EXTENSION_PDF = "pdf";
 
@@ -67,7 +70,9 @@ public class CreateAcquisitionPurchaseOrderDocument extends
     public boolean isActive(RegularAcquisitionProcess process, User user) {
         return isUserProcessOwner(process, user) && process.getAcquisitionProcessState().isAuthorized()
                 && ExpenditureTrackingSystem.isAcquisitionCentralGroupMember(user) && process.getRequest().hasSelectedSupplier()
-                && process.isCommitted() && process.isReverifiedAfterCommitment();
+                && process.isCommitted() && process.isReverifiedAfterCommitment()
+                && (!WorkflowConfiguration.getConfiguration().smartsignerIntegration() || !process.hasPurchaseOrderDocument()
+                        || process.getPurchaseOrderDocument().getSigningState() != SigningState.PENDING);
     }
 
     @Override
@@ -76,11 +81,16 @@ public class CreateAcquisitionPurchaseOrderDocument extends
     }
 
     static void createPurchaseOrderDocument(final CreateAcquisitionPurchaseOrderDocumentInformation activityInformation) {
-        RegularAcquisitionProcess process = activityInformation.getProcess();
-        String requestID = process.getAcquisitionRequestDocumentID();
-        byte[] file =
+        final AcquisitionProcess process = activityInformation.getProcess();
+        final String requestID = process.getAcquisitionRequestDocumentID();
+
+        final byte[] file =
                 createPurchaseOrderDocument(process.getAcquisitionRequest(), requestID, activityInformation.getSupplierContact());
-        new PurchaseOrderDocument(process, file, requestID + "." + EXTENSION_PDF, requestID);
+        final PurchaseOrderDocument document = new PurchaseOrderDocument(process, file, requestID + "." + EXTENSION_PDF, requestID);
+
+        if (WorkflowConfiguration.getConfiguration().smartsignerIntegration()) {
+            document.sendFileForSigning();
+        }
     }
 
     @Override
@@ -110,8 +120,8 @@ public class CreateAcquisitionPurchaseOrderDocument extends
         paramMap.put("supplierContact", supplierContact);
         paramMap.put("requestID", requestID);
         paramMap.put("responsibleName", Authenticate.getUser().getProfile().getFullName());
-        DeliveryLocalList deliveryLocalList = new DeliveryLocalList();
-        List<AcquisitionRequestItemBean> acquisitionRequestItemBeans = new ArrayList<AcquisitionRequestItemBean>();
+        final DeliveryLocalList deliveryLocalList = new DeliveryLocalList();
+        final List<AcquisitionRequestItemBean> acquisitionRequestItemBeans = new ArrayList<AcquisitionRequestItemBean>();
         createBeansLists(acquisitionRequest, deliveryLocalList, acquisitionRequestItemBeans);
         paramMap.put("deliveryLocals", deliveryLocalList);
         paramMap.put("institutionSocialSecurityNumber", ExpenditureConfiguration.get().ssn());
@@ -125,10 +135,10 @@ public class CreateAcquisitionPurchaseOrderDocument extends
             final String documentName =
                     ExpenditureTrackingSystem.getInstance().isCommitmentNumberRequired() ? "/reports/acquisitionRequestDocument"
                             + local_suffix + ".jasper" : "/reports/acquisitionRequestPurchaseOrder" + local_suffix + ".jasper";
-            byte[] byteArray =
+            final byte[] byteArray =
                     ReportUtils.exportToPdfFileAsByteArray(documentName, paramMap, resourceBundle, acquisitionRequestItemBeans);
             return byteArray;
-        } catch (JRException e) {
+        } catch (final JRException e) {
             e.printStackTrace();
             throw new DomainException(Bundle.EXPENDITURE, "acquisitionRequestDocument.message.exception.failedCreation");
         }
@@ -137,13 +147,12 @@ public class CreateAcquisitionPurchaseOrderDocument extends
 
     static private void createBeansLists(AcquisitionRequest acquisitionRequest, DeliveryLocalList deliveryLocalList,
             List<AcquisitionRequestItemBean> acquisitionRequestItemBeans) {
-        for (AcquisitionRequestItem acquisitionRequestItem : acquisitionRequest.getOrderedRequestItemsSet()) {
-            DeliveryLocal deliveryLocal =
-                    deliveryLocalList.getDeliveryLocal(acquisitionRequestItem.getRecipient(),
-                            acquisitionRequestItem.getRecipientPhone(), acquisitionRequestItem.getRecipientEmail(),
-                            acquisitionRequestItem.getAddress());
-            acquisitionRequestItemBeans.add(new AcquisitionRequestItemBean(deliveryLocal.getIdentification(),
-                    acquisitionRequestItem));
+        for (final AcquisitionRequestItem acquisitionRequestItem : acquisitionRequest.getOrderedRequestItemsSet()) {
+            final DeliveryLocal deliveryLocal = deliveryLocalList.getDeliveryLocal(acquisitionRequestItem.getRecipient(),
+                    acquisitionRequestItem.getRecipientPhone(), acquisitionRequestItem.getRecipientEmail(),
+                    acquisitionRequestItem.getAddress());
+            acquisitionRequestItemBeans
+                    .add(new AcquisitionRequestItemBean(deliveryLocal.getIdentification(), acquisitionRequestItem));
         }
     }
 
@@ -178,14 +187,14 @@ public class CreateAcquisitionPurchaseOrderDocument extends
         private char id = 'A';
 
         public DeliveryLocal getDeliveryLocal(String personName, String phone, String email, Address address) {
-            for (DeliveryLocal deliveryLocal : this) {
+            for (final DeliveryLocal deliveryLocal : this) {
                 if (deliveryLocal.getPersonName().equals(personName) && deliveryLocal.getPhone().equals(phone)
                         && deliveryLocal.getEmail().equals(email) && deliveryLocal.getAddress().equals(address)) {
                     return deliveryLocal;
                 }
             }
 
-            DeliveryLocal newDelDeliveryLocal = new DeliveryLocal("" + id, personName, phone, email, address);
+            final DeliveryLocal newDelDeliveryLocal = new DeliveryLocal("" + id, personName, phone, email, address);
             id++;
             add(newDelDeliveryLocal);
             return newDelDeliveryLocal;

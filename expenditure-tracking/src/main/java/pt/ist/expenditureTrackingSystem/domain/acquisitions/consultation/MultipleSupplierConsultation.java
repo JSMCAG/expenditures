@@ -10,6 +10,7 @@ import org.fenixedu.bennu.core.domain.User;
 import module.finance.util.Money;
 import pt.ist.expenditureTrackingSystem.domain.ContractType;
 import pt.ist.expenditureTrackingSystem.domain.acquisitions.Material;
+import pt.ist.expenditureTrackingSystem.domain.acquisitions.consultation.document.SupplierCriteriaSelectionDocument;
 import pt.ist.expenditureTrackingSystem.domain.organization.Supplier;
 
 public class MultipleSupplierConsultation extends MultipleSupplierConsultation_Base {
@@ -17,8 +18,8 @@ public class MultipleSupplierConsultation extends MultipleSupplierConsultation_B
     public MultipleSupplierConsultation(final MultipleSupplierConsultationProcess process, final String description,
             final Material material, final String justification, final ContractType contractType) {
         setProcess(process);
-        edit(description, material, justification, contractType, null, null, null, 6, 66, BigDecimal.ZERO, 0, Boolean.FALSE,
-                Boolean.TRUE, "");
+
+        edit(description, material, justification, contractType, null, null, null, 6, 66, BigDecimal.ZERO, 0, Boolean.FALSE, Boolean.TRUE, "");
     }
 
     public MultipleSupplierConsultation(final MultipleSupplierConsultationProcess process, final String description,
@@ -32,9 +33,9 @@ public class MultipleSupplierConsultation extends MultipleSupplierConsultation_B
 
     public void edit(final String description, final Material material, final String justification,
             final ContractType contractType, final Integer contractDuration, final User contractManager,
-            final String supplierCountJustification, final Integer proposalDeadline, final Integer proposalValidity,
-            final BigDecimal collateral, final Integer numberOfAlternativeProposals, final Boolean negotiation,
-            final Boolean specificEvaluationMethod, final String evaluationMethodJustification) {
+            final String supplierCountJustification, final Integer proposalDeadline,
+            final Integer proposalValidity, final BigDecimal collateral, final Integer numberOfAlternativeProposals,
+            final Boolean negotiation, final Boolean specificEvaluationMethod, final String evaluationMethodJustification) {
         setDescription(description);
         setMaterial(material);
         setJustification(justification);
@@ -48,6 +49,7 @@ public class MultipleSupplierConsultation extends MultipleSupplierConsultation_B
         setNumberOfAlternativeProposals(numberOfAlternativeProposals);
         setNegotiation(negotiation);
         setSpecificEvaluationMethod(specificEvaluationMethod);
+        setEvaluationMethodJustification(evaluationMethodJustification);
     }
 
     public Integer nextPartNumber() {
